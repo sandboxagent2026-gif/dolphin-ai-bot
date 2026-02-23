@@ -33,7 +33,7 @@ def get_ai_response(user_id: int, user_message: str) -> str:
     }
 
     payload = {
-                "model": "meta-llama/llama-3.1-8b-instruct:free",
+                        "model": "meta-llama/llama-3.3-70b-instruct:free",
         "messages": [
             {"role": "system", "content": "Sei Dolphin, un assistente AI utile, amichevole e intelligente. Rispondi in modo chiaro e conciso."}
         ] + history
