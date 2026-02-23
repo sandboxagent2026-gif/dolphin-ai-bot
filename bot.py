@@ -1,5 +1,6 @@
 import os
 import logging
+import asyncio
 import requests
 from telegram import Update
 from telegram.ext import (
@@ -26,7 +27,7 @@ def get_ai_response(user_id: int, user_message: str) -> str:
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json",
-        "HTTP-Referer": "https://dolphinaibot.onrender.com",
+        "HTTP-Referer": "https://dolphin-ai-bot-fcmj.onrender.com",
         "X-Title": "Dolphin AI Bot"
     }
 
@@ -59,7 +60,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     await update.message.reply_text(
         f"Ciao {user.first_name}! Sono Dolphin AI Bot\n\n"
-        "Puoi scrivermi qualsiasi cosa e ti risponderò con l'AI.\n\n"
+        "Puoi scrivermi qualsiasi cosa e ti risponder\u00f2 con l'AI.\n\n"
         "Comandi disponibili:\n"
         "/start - Messaggio di benvenuto\n"
         "/reset - Azzera la memoria della conversazione\n"
@@ -84,10 +85,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     user_message = update.message.text
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
-    response = get_ai_response(user_id, user_message)
+    response = await asyncio.get_event_loop().run_in_executor(None, get_ai_response, user_id, user_message)
     await update.message.reply_text(response)
 
-def main():
+async def main():
     app = Application.builder().token(TELEGRAM_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("reset", reset))
@@ -97,16 +98,21 @@ def main():
     if WEBHOOK_URL:
         webhook_path = f"/webhook/{TELEGRAM_TOKEN}"
         full_webhook_url = f"{WEBHOOK_URL}{webhook_path}"
+        port = int(os.environ.get("PORT", 10000))
         logger.info(f"Avvio in modalita WEBHOOK: {full_webhook_url}")
-        app.run_webhook(
-            listen="0.0.0.0",
-            port=int(os.environ.get("PORT", 10000)),
-            url_path=webhook_path,
-            webhook_url=full_webhook_url
-        )
+        await app.bot.set_webhook(url=full_webhook_url)
+        async with app:
+            await app.start()
+            await app.updater.start_webhook(
+                listen="0.0.0.0",
+                port=port,
+                url_path=webhook_path,
+            )
+            logger.info(f"Bot in ascolto su porta {port}")
+            await asyncio.Event().wait()
     else:
         logger.info("Avvio in modalita POLLING (locale)")
-        app.run_polling()
+        await app.run_polling()
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
