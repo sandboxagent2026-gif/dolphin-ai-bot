@@ -1,6 +1,6 @@
 import os
 import logging
-import asyncio
+import concurrent.futures
 import requests
 from telegram import Update
 from telegram.ext import (
@@ -16,6 +16,7 @@ OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
 WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
 
 conversation_memory = {}
+executor = concurrent.futures.ThreadPoolExecutor(max_workers=4)
 
 def get_ai_response(user_id: int, user_message: str) -> str:
     if user_id not in conversation_memory:
@@ -85,10 +86,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     user_message = update.message.text
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
-    response = await asyncio.get_event_loop().run_in_executor(None, get_ai_response, user_id, user_message)
+    loop = context.application.loop if hasattr(context.application, 'loop') else __import__('asyncio').get_event_loop()
+    import asyncio
+    response = await asyncio.wrap_future(executor.submit(get_ai_response, user_id, user_message))
     await update.message.reply_text(response)
 
-async def main():
+def main():
     app = Application.builder().token(TELEGRAM_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("reset", reset))
@@ -99,20 +102,16 @@ async def main():
         webhook_path = f"/webhook/{TELEGRAM_TOKEN}"
         full_webhook_url = f"{WEBHOOK_URL}{webhook_path}"
         port = int(os.environ.get("PORT", 10000))
-        logger.info(f"Avvio in modalita WEBHOOK: {full_webhook_url}")
-        await app.bot.set_webhook(url=full_webhook_url)
-        async with app:
-            await app.start()
-            await app.updater.start_webhook(
-                listen="0.0.0.0",
-                port=port,
-                url_path=webhook_path,
-            )
-            logger.info(f"Bot in ascolto su porta {port}")
-            await asyncio.Event().wait()
+        logger.info(f"Avvio in modalita WEBHOOK: {full_webhook_url} porta {port}")
+        app.run_webhook(
+            listen="0.0.0.0",
+            port=port,
+            url_path=webhook_path,
+            webhook_url=full_webhook_url
+        )
     else:
         logger.info("Avvio in modalita POLLING (locale)")
-        await app.run_polling()
+        app.run_polling()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
